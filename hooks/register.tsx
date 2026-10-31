@@ -389,12 +389,18 @@ export const register: Register = on => {
     // the engine orders the letters), code fences and tables the surface's own Markdown.
     const { Box, Text, Markdown } = $.ui.resolve(e)
     const drawnEnglish = await next(e)
+    // A run with no style is a plain string child: a Text whose only child is a styled Text
+    // (a paragraph that is one bold phrase) was drawn flush left.
     const runs = (key: string, rs: TextRun[], dim?: true) =>
-      rs.map((r, i) => (
-        <Text key={`${key}-${i}`} bold={r.bold} italic={r.italic} color={r.code ? 'claude' : undefined} dimColor={dim}>
-          {r.text}
-        </Text>
-      ))
+      rs.map((r, i) =>
+        r.bold || r.italic || r.code ? (
+          <Text key={`${key}-${i}`} dir="rtl" bold={r.bold} italic={r.italic} color={r.code ? 'claude' : undefined} dimColor={dim}>
+            {r.text}
+          </Text>
+        ) : (
+          r.text
+        ),
+      )
     const hebrew =
       t.status === 'done' && t.text ? (
         hebrewBlocks(t.text).map((b, i) =>
@@ -409,8 +415,15 @@ export const register: Register = on => {
             </Text>
           ) : (
             <Box key={`b${i}`} marginTop={i === 0 ? 0 : 1}>
-              <Text wrap="wrap" dir="rtl" bold={b.bold} dimColor={b.dim}>
-                {runs(`b${i}`, b.runs, b.dim)}
+              <Text
+                wrap="wrap"
+                dir="rtl"
+                bold={b.bold || (b.runs.length === 1 ? b.runs[0].bold : undefined)}
+                italic={b.runs.length === 1 ? b.runs[0].italic : undefined}
+                color={b.runs.length === 1 && b.runs[0].code ? 'claude' : undefined}
+                dimColor={b.dim}
+              >
+                {b.runs.length === 1 ? b.runs[0].text : runs(`b${i}`, b.runs, b.dim)}
               </Text>
             </Box>
           ),
