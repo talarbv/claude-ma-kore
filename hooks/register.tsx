@@ -3,7 +3,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Ask, Limits, Run, Summary, Translation } from '../types'
 import type { Run as TextRun } from './translate'
-import { SUMMARY_MS, STUCK_MS, clock, describe, detail, minutes, outcome, stripNiqqud, wrapLines } from './labels'
+import { SUMMARY_MS, STUCK_MS, clock, describe, detail, minutes, mirrorBrackets, outcome, stripNiqqud, wrapLines } from './labels'
 import {
   FAILED_TEXT,
   MAX_ANSWER_CHARS,
@@ -423,8 +423,8 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {drawnEnglish}
-        <Box marginTop={1} marginBottom={1}>
-          <Markdown text="---" />
+        <Box marginTop={1} marginBottom={1} justifyContent="flex-end">
+          <Text dimColor>{'─'.repeat(Math.max(10, (e.viewport?.columns ?? 60) - 4))}</Text>
         </Box>
         {hebrew}
       </Box>
@@ -507,7 +507,7 @@ export const register: Register = on => {
     const rtl = (key: string, text: string, dim = false, prefix?: string, width = textWidth) =>
       width >= 20 ? (
         <Box key={key} flexDirection="column" alignItems="flex-end">
-          {wrapLines(text, width - (prefix ? prefix.length : 0)).map((l, i) => (
+          {wrapLines(mirrorBrackets(text), width - (prefix ? prefix.length : 0)).map((l, i) => (
             <Text key={`${key}-${i}`} dimColor={dim}>
               {prefix && i === 0 ? <Text color="claude">{prefix}</Text> : null}
               {l}

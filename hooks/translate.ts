@@ -2,6 +2,8 @@
 // needs one, matching a drawn message block to the answer it belongs to, and the rules Haiku
 // translates by.
 
+import { mirrorBrackets } from './labels'
+
 /** A reply is translated when at least this share of its letters (outside code) is Latin. */
 export const ENGLISH_SHARE = 0.5
 
@@ -128,7 +130,7 @@ export type Block =
 /** Splits a line into runs by `**bold**`, `*italic*` and `` `code` ``; a link keeps its text. */
 export function inlineRuns(line: string): Run[] {
   const runs: Run[] = []
-  const text = line.replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1')
+  const text = mirrorBrackets(line.replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1'))
   const re = /\*\*([^*]+)\*\*|`([^`]+)`|(?<![\p{L}\p{N}])\*([^*\s][^*]*)\*(?![\p{L}\p{N}])/gu
   let last = 0
   for (const m of text.matchAll(re)) {

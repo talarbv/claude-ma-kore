@@ -197,3 +197,35 @@ export function wrapLines(text: string, width: number): string[] {
   if (line) lines.push(line)
   return lines
 }
+
+const MIRROR: Record<string, string> = { '(': ')', ')': '(', '[': ']', ']': '[', '{': '}', '}': '{', '<': '>', '>': '<' }
+const isHebrew = (ch: string) => /[\u0590-\u05FF]/.test(ch)
+const isLatin = (ch: string) => /[A-Za-z]/.test(ch)
+
+/**
+ * Swaps paired brackets that read right-to-left, so they open and close the right way once
+ * the engine reverses the letters for display: it orders the glyphs but keeps `(` as drawn,
+ * which then looks like a closing bracket. A bracket between Latin letters on both sides
+ * (`(main)`) reads left-to-right and stays; so does one in text with no Hebrew at all.
+ */
+export function mirrorBrackets(text: string): string {
+  if (!/[\u0590-\u05FF]/.test(text) || !/[()[\]{}<>]/.test(text)) return text
+  const chars = [...text]
+  const strongBefore = (i: number) => {
+    for (let k = i - 1; k >= 0; k--) {
+      if (isHebrew(chars[k])) return 'he'
+      if (isLatin(chars[k])) return 'en'
+    }
+    return 'none'
+  }
+  const strongAfter = (i: number) => {
+    for (let k = i + 1; k < chars.length; k++) {
+      if (isHebrew(chars[k])) return 'he'
+      if (isLatin(chars[k])) return 'en'
+    }
+    return 'none'
+  }
+  return chars
+    .map((ch, i) => (MIRROR[ch] && !(strongBefore(i) === 'en' && strongAfter(i) === 'en') ? MIRROR[ch] : ch))
+    .join('')
+}
