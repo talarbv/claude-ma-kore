@@ -605,7 +605,7 @@ export const register: Register = on => {
                 <Input
                   key="question"
                   autoFocus
-                  placeholder="מה תרצה לדעת על מה שקורה עכשיו?"
+                  placeholder="לחץ כאן, כתוב שאלה על מה שקורה עכשיו ולחץ Enter"
                   submitLabel=" "
                   onSubmit={submit}
                 />
