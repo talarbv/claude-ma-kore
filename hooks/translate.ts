@@ -108,9 +108,105 @@ export function tokensFor(answer: string, attempt = 1): number {
   return Math.min(16_000, Math.max(800, answer.length + 400) * attempt)
 }
 
-/** The translation as drawn under the English: a rule, then the Hebrew. */
-export const drawn = (english: string, hebrew: string): string => `${english}\n\n---\n\n${hebrew}`
-
 /** The line drawn under the English while the translation is on its way, or after it failed. */
-export const PENDING_LINE = '*מתרגם לעברית…*'
-export const FAILED_LINE = '*התרגום לעברית לא הצליח הפעם*'
+export const PENDING_TEXT = 'מתרגם לעברית…'
+export const FAILED_TEXT = 'התרגום לעברית לא הצליח הפעם'
+
+/** One run of a line's text: plain, bold, italic or inline code. */
+export type Run = { text: string; bold?: true; italic?: true; code?: true }
+
+/**
+ * One block of the translation as the band draws it: a paragraph (a heading is a bold one),
+ * a list item with its marker, or a block left to the surface's own Markdown drawing (a
+ * code fence, a table), which reads left to right anyway.
+ */
+export type Block =
+  | { kind: 'para'; runs: Run[]; bold?: true; dim?: true }
+  | { kind: 'item'; marker: string; runs: Run[] }
+  | { kind: 'markdown'; text: string }
+
+/** Splits a line into runs by `**bold**`, `*italic*` and `` `code` ``; a link keeps its text. */
+export function inlineRuns(line: string): Run[] {
+  const runs: Run[] = []
+  const text = line.replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1')
+  const re = /\*\*([^*]+)\*\*|`([^`]+)`|(?<![\p{L}\p{N}])\*([^*\s][^*]*)\*(?![\p{L}\p{N}])/gu
+  let last = 0
+  for (const m of text.matchAll(re)) {
+    const at = m.index ?? 0
+    if (at > last) runs.push({ text: text.slice(last, at) })
+    if (m[1] !== undefined) runs.push({ text: m[1], bold: true })
+    else if (m[2] !== undefined) runs.push({ text: m[2], code: true })
+    else runs.push({ text: m[3], italic: true })
+    last = at + m[0].length
+  }
+  if (last < text.length) runs.push({ text: text.slice(last) })
+  return runs
+}
+
+/**
+ * The translation's Markdown as blocks the band can draw right-to-left, one Text per
+ * paragraph or list item; code fences and tables stay Markdown.
+ */
+export function hebrewBlocks(markdown: string): Block[] {
+  const blocks: Block[] = []
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
+  let para: string[] = []
+  const flush = () => {
+    if (para.length > 0) blocks.push({ kind: 'para', runs: inlineRuns(para.join(' ')) })
+    para = []
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^\s*```/.test(line)) {
+      flush()
+      const fence: string[] = [line]
+      for (i++; i < lines.length; i++) {
+        fence.push(lines[i])
+        if (/^\s*```\s*$/.test(lines[i])) break
+      }
+      blocks.push({ kind: 'markdown', text: fence.join('\n') })
+      continue
+    }
+    if (/^\s*\|/.test(line)) {
+      flush()
+      const table: string[] = [line]
+      while (i + 1 < lines.length && /^\s*\|/.test(lines[i + 1])) table.push(lines[++i])
+      blocks.push({ kind: 'markdown', text: table.join('\n') })
+      continue
+    }
+    if (/^\s*$/.test(line)) {
+      flush()
+      continue
+    }
+    const heading = /^\s*#{1,6}\s+(.*)$/.exec(line)
+    if (heading) {
+      flush()
+      blocks.push({ kind: 'para', runs: inlineRuns(heading[1].trim()), bold: true })
+      continue
+    }
+    if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+      flush()
+      blocks.push({ kind: 'markdown', text: '---' })
+      continue
+    }
+    const quote = /^\s*>\s?(.*)$/.exec(line)
+    if (quote) {
+      flush()
+      blocks.push({ kind: 'para', runs: inlineRuns(quote[1].trim()), dim: true })
+      continue
+    }
+    const item = /^\s*(?:[-*+•]|(\d+)[.)])\s+(.*)$/.exec(line)
+    if (item) {
+      flush()
+      const body = [item[2]]
+      while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1]) && !/^\s*(?:[-*+•]|\d+[.)])\s+/.test(lines[i + 1])) {
+        body.push(lines[++i].trim())
+      }
+      blocks.push({ kind: 'item', marker: item[1] ? `${item[1]}.` : '•', runs: inlineRuns(body.join(' ')) })
+      continue
+    }
+    para.push(line.trim())
+  }
+  flush()
+  return blocks
+}

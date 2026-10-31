@@ -16,8 +16,8 @@ export type Run = {
   notes: Note[]
   /** When the last tool call finished (or the run started): "thinking" since then. */
   idleSince: number
-  /** The latest question asked about this task, if any. */
-  ask?: Ask
+  /** The questions asked about this task and their answers, oldest first; a closed one is gone. */
+  asks: Ask[]
 }
 
 /** A long task's one-line summary, drawn in place of the turn's closing line of that duration. */

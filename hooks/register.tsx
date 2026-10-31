@@ -2,15 +2,16 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Ask, Limits, Run, Summary, Translation } from '../types'
+import type { Run as TextRun } from './translate'
 import { SUMMARY_MS, STUCK_MS, clock, describe, detail, minutes, outcome, stripNiqqud, wrapLines } from './labels'
 import {
-  FAILED_LINE,
+  FAILED_TEXT,
   MAX_ANSWER_CHARS,
-  PENDING_LINE,
+  PENDING_TEXT,
   TAIL_CHARS,
   TRANSLATE_RULES,
   TRANSLATE_TIMEOUT_MS,
-  drawn,
+  hebrewBlocks,
   isAnswerEnd,
   looksTranslated,
   needsTranslation,
@@ -43,6 +44,9 @@ const TRANSLATE_KEY = 'translateOn'
 const FIRST_NOTE_STEPS = 2
 
 /** The interval picker's choices; 0 turns the explanations off. Kept across sessions in `$.store`. */
+/** How many questions and answers the band keeps for one task; older ones drop off. */
+const MAX_ASKS = 3
+
 const EVERY_OPTIONS = [
   { ms: 15_000, label: '15ש׳' },
   { ms: 30_000, label: '30ש׳' },
@@ -155,11 +159,11 @@ async function answer($: EngineInterface, r: Run, question: string, at: number):
   const controller = new AbortController()
   live.answering = controller
   const ask: Ask = { at, question }
-  await update($, run, cur => cur && { ...cur, ask })
+  await update($, run, cur => cur && { ...cur, asks: [...(cur.asks ?? []), ask].slice(-MAX_ASKS) })
   const running = r.steps.filter(s => s.endedAt === undefined).map(s => `- ${s.label}`).join('\n')
   const notes = r.notes.slice(-4).map(n => `- ${n.text}`).join('\n') || '(none yet)'
   const settle = (patch: Partial<Ask>) =>
-    update($, run, cur => (cur && cur.ask?.at === at ? { ...cur, ask: { ...cur.ask, ...patch } } : cur))
+    update($, run, cur => cur && { ...cur, asks: (cur.asks ?? []).map(a => (a.at === at ? { ...a, ...patch } : a)) })
   try {
     const reply = await $.model.complete(
       {
@@ -285,7 +289,7 @@ export const register: Register = on => {
     live.answering?.abort()
     await update($, now, () => t)
     await update($, isAsking, () => false)
-    await update($, run, (): Run => ({ startedAt: t, steps: [], notes: [], idleSince: t }))
+    await update($, run, (): Run => ({ startedAt: t, steps: [], notes: [], idleSince: t, asks: [] }))
     await refreshLimits($)
     live.ticker?.cancel()
     live.ticker = $.clock.every(1000, async () => {
@@ -380,8 +384,51 @@ export const register: Register = on => {
     const english = e.props.text
     const t = list.find(one => isAnswerEnd(english, one.tail, one.length))
     if (!t) return next(e)
-    const below = t.status === 'done' && t.text ? t.text : t.status === 'failed' ? FAILED_LINE : PENDING_LINE
-    return next({ ...e, props: { ...e.props, text: drawn(english, below) } })
+    // The English as the engine draws it, a rule, then the Hebrew drawn here block by block:
+    // each paragraph or list item is one right-to-left Text (`dir="rtl"`: flush right where
+    // the engine orders the letters), code fences and tables the surface's own Markdown.
+    const { Box, Text, Markdown } = $.ui.resolve(e)
+    const drawnEnglish = await next(e)
+    const runs = (key: string, rs: TextRun[], dim?: true) =>
+      rs.map((r, i) => (
+        <Text key={`${key}-${i}`} bold={r.bold} italic={r.italic} color={r.code ? 'claude' : undefined} dimColor={dim}>
+          {r.text}
+        </Text>
+      ))
+    const hebrew =
+      t.status === 'done' && t.text ? (
+        hebrewBlocks(t.text).map((b, i) =>
+          b.kind === 'markdown' ? (
+            <Box key={`b${i}`} marginTop={i === 0 ? 0 : 1}>
+              <Markdown text={b.text} />
+            </Box>
+          ) : b.kind === 'item' ? (
+            <Text key={`b${i}`} wrap="wrap" dir="rtl">
+              <Text color="claude">{b.marker} </Text>
+              {runs(`b${i}`, b.runs)}
+            </Text>
+          ) : (
+            <Box key={`b${i}`} marginTop={i === 0 ? 0 : 1}>
+              <Text wrap="wrap" dir="rtl" bold={b.bold} dimColor={b.dim}>
+                {runs(`b${i}`, b.runs, b.dim)}
+              </Text>
+            </Box>
+          ),
+        )
+      ) : (
+        <Text key="state" wrap="wrap" dir="rtl" dimColor italic>
+          {t.status === 'failed' ? FAILED_TEXT : PENDING_TEXT}
+        </Text>
+      )
+    return (
+      <Box flexDirection="column">
+        {drawnEnglish}
+        <Box marginTop={1} marginBottom={1}>
+          <Markdown text="---" />
+        </Box>
+        {hebrew}
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
@@ -445,6 +492,7 @@ export const register: Register = on => {
       const cur = await read($, run)
       if (question && cur) await answer($, cur, question, await $.clock.now())
     }
+    const dismiss = (at: number) => update($, run, cur => cur && { ...cur, asks: (cur.asks ?? []).filter(a => a.at !== at) })
 
     // Right-aligned Hebrew: each text is broken into lines here and every line is drawn
     // flush right (one wrapped Text leaves its lines flush left). Width = the band's own
@@ -456,10 +504,10 @@ export const register: Register = on => {
     const limitsWidth = Math.max([...fiveLine].length, [...weekLine].length) + 4
     const bodyColumns = typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : 0
     const textWidth = bodyColumns - limitsWidth - 4 - 1
-    const rtl = (key: string, text: string, dim = false, prefix?: string) =>
-      textWidth >= 20 ? (
+    const rtl = (key: string, text: string, dim = false, prefix?: string, width = textWidth) =>
+      width >= 20 ? (
         <Box key={key} flexDirection="column" alignItems="flex-end">
-          {wrapLines(text, textWidth - (prefix ? prefix.length : 0)).map((l, i) => (
+          {wrapLines(text, width - (prefix ? prefix.length : 0)).map((l, i) => (
             <Text key={`${key}-${i}`} dimColor={dim}>
               {prefix && i === 0 ? <Text color="claude">{prefix}</Text> : null}
               {l}
@@ -476,7 +524,10 @@ export const register: Register = on => {
     return (
       <Box>
         <Box flexDirection="column" flexGrow={1} flexShrink={1} borderStyle="round" borderDimColor paddingX={1}>
-          <Box justifyContent="flex-end">
+          {/* Buttons pinned at the left edge, the status flush right: neither moves when the
+              activity's text changes length. */}
+          <Box justifyContent="space-between">
+            <Box flexShrink={0}>
             <Button
               key="toggle"
               plain
@@ -498,6 +549,7 @@ export const register: Register = on => {
             {/* The translation switch: lit while English answers get a Hebrew translation. */}
             <Box marginLeft={1}>
               <Button key="translate" plain dimColor={!translating} label="ת" onPress={toggleTranslate} />
+            </Box>
             </Box>
             {/* A layout gap, not a space inside the Hebrew text: that text is drawn right-to-left
                 as one run, so a leading space in it lands at its far end and the step number
@@ -522,24 +574,40 @@ export const register: Register = on => {
             </Box>
           ) : null}
           {asking ? (
-            <Input
-              key="question"
-              autoFocus
-              placeholder="מה תרצה לדעת על מה שקורה עכשיו?"
-              submitLabel="שלח"
-              onSubmit={submit}
-            />
+            <Box key="question-row" justifyContent="flex-end">
+              <Box width={textWidth >= 20 ? Math.min(textWidth, 72) : undefined} flexGrow={textWidth >= 20 ? 0 : 1}>
+                <Input
+                  key="question"
+                  autoFocus
+                  placeholder="מה תרצה לדעת על מה שקורה עכשיו?"
+                  submitLabel="שלח"
+                  onSubmit={submit}
+                />
+              </Box>
+            </Box>
           ) : every === 0 ? null : lastNote ? (
             rtl('note', lastNote.text)
           ) : (
             rtl('note', 'ההסבר הראשון יופיע אחרי כמה צעדים', true)
           )}
-          {!asking && r.ask
-            ? r.ask.answer
-              ? rtl('answer', r.ask.answer, false, '? ')
-              : r.ask.failed
-                ? rtl('answer', 'לא הצלחתי לענות הפעם; אפשר לנסות שוב', true, '? ')
-                : rtl('answer', `${r.ask.question} … עונה`, true, '? ')
+          {/* Each question with its answer under it, flush right, and a close button pinned
+              at the left edge of its own row; the text is sized to what the button leaves. */}
+          {!asking
+            ? (r.asks ?? []).map(a => (
+                <Box key={`ask${a.at}`} justifyContent="space-between" marginTop={1}>
+                  <Box flexShrink={0} marginRight={2}>
+                    <Button key={`close-${a.at}`} plain dimColor label="×" onPress={() => dismiss(a.at)} />
+                  </Box>
+                  <Box flexDirection="column" alignItems="flex-end" flexShrink={1}>
+                    {rtl(`q${a.at}`, a.question, true, '? ', textWidth - 3)}
+                    {a.answer
+                      ? rtl(`r${a.at}`, a.answer, false, undefined, textWidth - 3)
+                      : a.failed
+                        ? rtl(`r${a.at}`, 'לא הצלחתי לענות הפעם; אפשר לנסות שוב', true, undefined, textWidth - 3)
+                        : rtl(`r${a.at}`, '… עונה', true, undefined, textWidth - 3)}
+                  </Box>
+                </Box>
+              ))
             : null}
           {isStuck ? (
             <Box key="stuck" justifyContent="flex-end">
