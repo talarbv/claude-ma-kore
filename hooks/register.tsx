@@ -446,14 +446,16 @@ export const register: Register = on => {
       if (question && cur) await answer($, cur, question, await $.clock.now())
     }
 
-    // Right-aligned Hebrew: with the screen's width known, each text is broken into lines
-    // here and every line is drawn flush right (one wrapped Text leaves its lines flush
-    // left). Width = the screen less the limits box (widest line, border, padding), the
-    // band's own border and padding, and a safety margin. Unmeasured: one wrapped Text.
+    // Right-aligned Hebrew: each text is broken into lines here and every line is drawn
+    // flush right (one wrapped Text leaves its lines flush left). Width = the band's own
+    // cells (`bodyColumns`: the column less the engine's `[-]`; never `viewport.columns`)
+    // less the limits box (widest line, border, padding), this box's border and padding,
+    // and a safety margin. Without a usable width: one wrapped Text.
     const fiveLine = `${percent(used.fiveHour)} 5 שעות`
     const weekLine = `${percent(used.week)} שבועי`
     const limitsWidth = Math.max([...fiveLine].length, [...weekLine].length) + 4
-    const textWidth = e.viewport ? e.viewport.columns - limitsWidth - 4 - 2 : 0
+    const bodyColumns = typeof e.props.bodyColumns === 'number' ? e.props.bodyColumns : 0
+    const textWidth = bodyColumns - limitsWidth - 4 - 1
     const rtl = (key: string, text: string, dim = false, prefix?: string) =>
       textWidth >= 20 ? (
         <Box key={key} flexDirection="column" alignItems="flex-end">
