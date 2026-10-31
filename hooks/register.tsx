@@ -596,13 +596,17 @@ export const register: Register = on => {
             </Box>
           ) : null}
           {asking ? (
-            <Box key="question-row" justifyContent="flex-end">
+            // The engine draws the field at its own width with the text at its left end, so it
+            // cannot sit flush right like the rest; anchored left, it at least starts at the
+            // edge. The submit hint is the enter glyph alone: a Hebrew label was drawn glued
+            // to the typed text.
+            <Box key="question-row" justifyContent="flex-start">
               <Box width={textWidth >= 20 ? Math.min(textWidth, 72) : undefined} flexGrow={textWidth >= 20 ? 0 : 1}>
                 <Input
                   key="question"
                   autoFocus
                   placeholder="מה תרצה לדעת על מה שקורה עכשיו?"
-                  submitLabel="שלח"
+                  submitLabel=" "
                   onSubmit={submit}
                 />
               </Box>
