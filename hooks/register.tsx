@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Ask, Limits, Run, Summary, Translation } from '../types'
-import { SUMMARY_MS, STUCK_MS, clock, describe, detail, minutes, outcome, stripNiqqud } from './labels'
+import { SUMMARY_MS, STUCK_MS, clock, describe, detail, minutes, outcome, stripNiqqud, wrapLines } from './labels'
 import {
   FAILED_LINE,
   MAX_ANSWER_CHARS,
@@ -446,10 +446,35 @@ export const register: Register = on => {
       if (question && cur) await answer($, cur, question, await $.clock.now())
     }
 
+    // Right-aligned Hebrew: with the screen's width known, each text is broken into lines
+    // here and every line is drawn flush right (one wrapped Text leaves its lines flush
+    // left). Width = the screen less the limits box (widest line, border, padding), the
+    // band's own border and padding, and a safety margin. Unmeasured: one wrapped Text.
+    const fiveLine = `${percent(used.fiveHour)} 5 שעות`
+    const weekLine = `${percent(used.week)} שבועי`
+    const limitsWidth = Math.max([...fiveLine].length, [...weekLine].length) + 4
+    const textWidth = e.viewport ? e.viewport.columns - limitsWidth - 4 - 2 : 0
+    const rtl = (key: string, text: string, dim = false, prefix?: string) =>
+      textWidth >= 20 ? (
+        <Box key={key} flexDirection="column" alignItems="flex-end">
+          {wrapLines(text, textWidth - (prefix ? prefix.length : 0)).map((l, i) => (
+            <Text key={`${key}-${i}`} dimColor={dim}>
+              {prefix && i === 0 ? <Text color="claude">{prefix}</Text> : null}
+              {l}
+            </Text>
+          ))}
+        </Box>
+      ) : (
+        <Text key={key} wrap="wrap" dimColor={dim}>
+          {prefix ? <Text color="claude">{prefix}</Text> : null}
+          {text}
+        </Text>
+      )
+
     return (
       <Box>
         <Box flexDirection="column" flexGrow={1} flexShrink={1} borderStyle="round" borderDimColor paddingX={1}>
-          <Box>
+          <Box justifyContent="flex-end">
             <Button
               key="toggle"
               plain
@@ -484,7 +509,7 @@ export const register: Register = on => {
             </Box>
           </Box>
           {picking ? (
-            <Box key="picker">
+            <Box key="picker" justifyContent="flex-end">
               {EVERY_OPTIONS.map(o => (
                 <Box key={`o${o.ms}`} marginRight={2}>
                   <Button key={`every-${o.ms}`} plain onPress={() => choose(o.ms)}>
@@ -503,34 +528,27 @@ export const register: Register = on => {
               onSubmit={submit}
             />
           ) : every === 0 ? null : lastNote ? (
-            <Text key="note" wrap="wrap">{lastNote.text}</Text>
+            rtl('note', lastNote.text)
           ) : (
-            <Text key="note" dimColor>ההסבר הראשון יופיע אחרי כמה צעדים</Text>
+            rtl('note', 'ההסבר הראשון יופיע אחרי כמה צעדים', true)
           )}
-          {!asking && r.ask ? (
-            <Text key="answer" wrap="wrap">
-              <Text color="claude">? </Text>
-              {r.ask.answer ? (
-                r.ask.answer
-              ) : r.ask.failed ? (
-                <Text dimColor>לא הצלחתי לענות הפעם; אפשר לנסות שוב</Text>
-              ) : (
-                <Text dimColor>{r.ask.question} … עונה</Text>
-              )}
-            </Text>
-          ) : null}
+          {!asking && r.ask
+            ? r.ask.answer
+              ? rtl('answer', r.ask.answer, false, '? ')
+              : r.ask.failed
+                ? rtl('answer', 'לא הצלחתי לענות הפעם; אפשר לנסות שוב', true, '? ')
+                : rtl('answer', `${r.ask.question} … עונה`, true, '? ')
+            : null}
           {isStuck ? (
-            <Text color="warning" wrap="truncate-end">
-              אותה פעולה רצה כבר {minutes(age)}. אם זה לא צפוי, אפשר לעצור עם Esc.
-            </Text>
+            <Box key="stuck" justifyContent="flex-end">
+              <Text color="warning" wrap="truncate-end">
+                אותה פעולה רצה כבר {minutes(age)}. אם זה לא צפוי, אפשר לעצור עם Esc.
+              </Text>
+            </Box>
           ) : null}
-          {open && earlier.length === 0 ? <Text dimColor>אין עדיין הסברים קודמים</Text> : null}
+          {open && earlier.length === 0 ? rtl('none', 'אין עדיין הסברים קודמים', true) : null}
           {open
-            ? earlier.map(n => (
-                <Text key={`n${n.at}`} wrap="wrap" dimColor>
-                  {n.text}
-                </Text>
-              ))
+            ? earlier.map(n => rtl(`n${n.at}`, n.text, true))
             : null}
         </Box>
         <Box key="limits" flexDirection="column" flexShrink={0} borderStyle="round" borderDimColor paddingX={1}>

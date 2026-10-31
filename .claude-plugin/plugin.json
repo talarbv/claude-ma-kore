@@ -1,6 +1,6 @@
 {
   "name": "whats-happening",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Live Hebrew band showing what Claude is doing now, plain-language progress notes on a chosen interval, a question field answered from the task so far, 5-hour and weekly usage, a stuck warning, a one-line summary after long tasks, and a Hebrew translation under answers written mostly in English (/translate toggles it)",
   "author": { "name": "talarbv" },
   "license": "MIT",

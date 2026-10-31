@@ -168,3 +168,32 @@ export function minutes(ms: number): string {
 
 /** Removes Hebrew points and cantillation marks (niqqud) from text. */
 export const stripNiqqud = (text: string): string => text.replace(/[֑-ׇ]/g, '')
+
+/**
+ * Breaks text into lines of at most `width` cells, on spaces where it can.
+ * The band draws each line as its own right-aligned Text, so Hebrew sits flush
+ * against the right edge; one wrapped Text would leave every line flush left.
+ * Hebrew letters are one cell each.
+ */
+export function wrapLines(text: string, width: number): string[] {
+  const max = Math.max(1, Math.floor(width))
+  const lines: string[] = []
+  let line = ''
+  for (const word of text.replace(/\s+/g, ' ').trim().split(' ')) {
+    if (!word) continue
+    const cand = line ? `${line} ${word}` : word
+    if ([...cand].length <= max) {
+      line = cand
+      continue
+    }
+    if (line) lines.push(line)
+    let rest = [...word]
+    while (rest.length > max) {
+      lines.push(rest.slice(0, max).join(''))
+      rest = rest.slice(max)
+    }
+    line = rest.join('')
+  }
+  if (line) lines.push(line)
+  return lines
+}
