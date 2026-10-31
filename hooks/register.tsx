@@ -546,9 +546,12 @@ export const register: Register = on => {
             <Box marginLeft={1}>
               <Button key="ask" plain dimColor={!asking} label="?" onPress={toggleAsking} />
             </Box>
-            {/* The translation switch: lit while English answers get a Hebrew translation. */}
-            <Box marginLeft={1}>
-              <Button key="translate" plain dimColor={!translating} label="ת" onPress={toggleTranslate} />
+            {/* The translation switch, a filled square and lit text while English answers get
+                a Hebrew translation, an empty square and dim text while they do not. */}
+            <Box marginLeft={2}>
+              <Button key="translate" plain label="תרגם" onPress={toggleTranslate}>
+                {translating ? <Text color="claude">■ תרגם</Text> : <Text dimColor>□ תרגם</Text>}
+              </Button>
             </Box>
             </Box>
             {/* A layout gap, not a space inside the Hebrew text: that text is drawn right-to-left
