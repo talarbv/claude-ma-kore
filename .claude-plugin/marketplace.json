@@ -1,0 +1,11 @@
+{
+  "name": "claude-ma-kore",
+  "owner": { "name": "talarbv" },
+  "plugins": [
+    {
+      "name": "whats-happening",
+      "source": "./",
+      "description": "Live Hebrew band: what Claude is doing and why, a stuck warning, a summary line after long tasks, and a Hebrew translation under mostly-English answers (/translate)"
+    }
+  ]
+}
