@@ -212,3 +212,48 @@ export function hebrewBlocks(markdown: string): Block[] {
   flush()
   return blocks
 }
+
+/**
+ * Breaks styled runs into lines of at most `width` cells, on spaces where it can, each line
+ * its own list of runs with the styles kept. Drawn one line per right-aligned row, so a bold
+ * or italic line sits flush right like a plain one: the engine's own flush-right for `dir`
+ * does not reach styled text, and a box's alignment does.
+ */
+export function wrapRuns(runs: Run[], width: number): Run[][] {
+  const max = Math.max(1, Math.floor(width))
+  const lines: Run[][] = []
+  let line: Run[] = []
+  let used = 0
+  const push = (word: string, style: Omit<Run, 'text'>) => {
+    const last = line[line.length - 1]
+    if (last && last.bold === style.bold && last.italic === style.italic && last.code === style.code) last.text += word
+    else line.push({ text: word, ...style })
+    used += [...word].length
+  }
+  const newline = () => {
+    if (line.length > 0) lines.push(line)
+    line = []
+    used = 0
+  }
+  for (const run of runs) {
+    const { text, ...style } = run
+    for (const word of text.split(/\s+/)) {
+      if (!word) continue
+      const len = [...word].length
+      if (used > 0 && used + 1 + len > max) newline()
+      if (used > 0) push(' ', style)
+      if (len > max) {
+        let rest = [...word]
+        while (rest.length > max) {
+          if (used > 0) newline()
+          push(rest.slice(0, max).join(''), style)
+          newline()
+          rest = rest.slice(max)
+        }
+        push(rest.join(''), style)
+      } else push(word, style)
+    }
+  }
+  newline()
+  return lines
+}

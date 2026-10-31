@@ -12,6 +12,7 @@ import {
   TRANSLATE_RULES,
   TRANSLATE_TIMEOUT_MS,
   hebrewBlocks,
+  wrapRuns,
   isAnswerEnd,
   looksTranslated,
   needsTranslation,
@@ -384,22 +385,43 @@ export const register: Register = on => {
     const english = e.props.text
     const t = list.find(one => isAnswerEnd(english, one.tail, one.length))
     if (!t) return next(e)
-    // The English as the engine draws it, a rule, then the Hebrew drawn here block by block:
-    // each paragraph or list item is one right-to-left Text (`dir="rtl"`: flush right where
-    // the engine orders the letters), code fences and tables the surface's own Markdown.
+    // The English as the engine draws it, a rule, then the Hebrew drawn here block by block.
+    // With the screen's width known, each paragraph or list item is wrapped here and every
+    // line is drawn as its own right-aligned row (a box's alignment holds for bold and italic
+    // text, where the engine's own flush-right for `dir` does not); without it, one Text.
     const { Box, Text, Markdown } = $.ui.resolve(e)
     const drawnEnglish = await next(e)
-    // A run with no style is a plain string child: a Text whose only child is a styled Text
-    // (a paragraph that is one bold phrase) was drawn flush left.
-    const runs = (key: string, rs: TextRun[], dim?: true) =>
+    const columns = e.viewport?.columns
+    const width = columns ? Math.max(20, columns - 8) : 0
+    const styled = (key: string, rs: TextRun[]) =>
       rs.map((r, i) =>
         r.bold || r.italic || r.code ? (
-          <Text key={`${key}-${i}`} dir="rtl" bold={r.bold} italic={r.italic} color={r.code ? 'claude' : undefined} dimColor={dim}>
+          <Text key={`${key}-${i}`} dir="rtl" bold={r.bold} italic={r.italic} color={r.code ? 'claude' : undefined}>
             {r.text}
           </Text>
         ) : (
           r.text
         ),
+      )
+    // A block is a column (its rows stretch to the full width, so flush right is the
+    // message's right edge) directly inside the outer column; no wrapper box.
+    const block = (key: string, rs: TextRun[], dim?: true, marker?: string, gap = 0) =>
+      width > 0 ? (
+        <Box key={key} flexDirection="column" alignItems="flex-end" marginTop={gap}>
+          {wrapRuns(rs, width - (marker ? marker.length + 1 : 0)).map((l, i) => (
+            <Text key={`${key}-${i}`} dir="rtl" dimColor={dim}>
+              {marker && i === 0 ? <Text color="claude">{marker} </Text> : null}
+              {styled(`${key}-${i}`, l)}
+            </Text>
+          ))}
+        </Box>
+      ) : (
+        <Box key={key} marginTop={gap}>
+          <Text wrap="wrap" dir="rtl" dimColor={dim}>
+            {marker ? <Text color="claude">{marker} </Text> : null}
+            {styled(key, rs)}
+          </Text>
+        </Box>
       )
     const hebrew =
       t.status === 'done' && t.text ? (
@@ -409,35 +431,19 @@ export const register: Register = on => {
               <Markdown text={b.text} />
             </Box>
           ) : b.kind === 'item' ? (
-            <Text key={`b${i}`} wrap="wrap" dir="rtl">
-              <Text color="claude">{b.marker} </Text>
-              {runs(`b${i}`, b.runs)}
-            </Text>
+            block(`b${i}`, b.runs, undefined, b.marker)
           ) : (
-            <Box key={`b${i}`} marginTop={i === 0 ? 0 : 1}>
-              <Text
-                wrap="wrap"
-                dir="rtl"
-                bold={b.bold || (b.runs.length === 1 ? b.runs[0].bold : undefined)}
-                italic={b.runs.length === 1 ? b.runs[0].italic : undefined}
-                color={b.runs.length === 1 && b.runs[0].code ? 'claude' : undefined}
-                dimColor={b.dim}
-              >
-                {b.runs.length === 1 ? b.runs[0].text : runs(`b${i}`, b.runs, b.dim)}
-              </Text>
-            </Box>
+            block(`b${i}`, b.bold ? b.runs.map(r => ({ ...r, bold: true as const })) : b.runs, b.dim, undefined, i === 0 ? 0 : 1)
           ),
         )
       ) : (
-        <Text key="state" wrap="wrap" dir="rtl" dimColor italic>
-          {t.status === 'failed' ? FAILED_TEXT : PENDING_TEXT}
-        </Text>
+        block('state', [{ text: t.status === 'failed' ? FAILED_TEXT : PENDING_TEXT }], true)
       )
     return (
       <Box flexDirection="column">
         {drawnEnglish}
         <Box marginTop={1} marginBottom={1} justifyContent="flex-end">
-          <Text dimColor>{'─'.repeat(Math.max(10, (e.viewport?.columns ?? 60) - 4))}</Text>
+          <Text dimColor>{'─'.repeat(Math.max(10, (columns ?? 60) - 4))}</Text>
         </Box>
         {hebrew}
       </Box>
